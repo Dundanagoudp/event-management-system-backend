@@ -21,7 +21,6 @@ const signup = async (req, res) => {
       user: {
         fullname: user.fullname,
         email: user.email,
-        password: user.password,
         profilePicture: user.profilePicture,
         _id: user._id,
         createdAt: user.createdAt,
@@ -51,7 +50,6 @@ const login = async (req, res) => {
       user: {
         fullname: user.fullname,
         email: user.email,
-        password: user.password,
         profilePicture: user.profilePicture,
         _id: user._id,
         createdAt: user.createdAt,
