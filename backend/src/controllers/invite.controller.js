@@ -3,7 +3,6 @@ const Event = require('../models/event.model');
 const { sendEmail } = require('../utils/emailSender');
 
 
-
 const { sendSMS } = require('../utils/smsSender');
 
 // Send Invitation
@@ -148,6 +147,8 @@ const getInvitationsForEvent = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
+
 
 module.exports = {
   sendInvitation,
