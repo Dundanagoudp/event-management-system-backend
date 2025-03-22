@@ -4,8 +4,8 @@ const authMiddleware = require('../middleware/auth.middleware');
 const router = express.Router();
 
 router.post('/invites', authMiddleware, inviteController.sendInvitation);
-router.put('/invites/:inviteId', authMiddleware, inviteController.respondAllToInvitation);
-router.put('/invites/:inviteId/respond', authMiddleware, inviteController.respondToInvitation);
+router.put('/invites/:inviteId', authMiddleware, inviteController.respondAllToInvitation); // Consolidated route
+router.put('/invites/:inviteId/respond', authMiddleware, inviteController.respondToInvitation); // Specific response route
 router.get('/events/:eventId/invites', authMiddleware, inviteController.getInvitationsForEvent);
 
 module.exports = router;
