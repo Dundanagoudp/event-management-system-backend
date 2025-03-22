@@ -7,6 +7,7 @@ const cors = require("cors");
 const usersRoutes = require("./src/routes/user.routes");
 const eventRoutes = require("./src/routes/event.routes");
 const inviteRoutes = require("./src/routes/invite.routes");
+const locationRoutes = require("./src/routes/location.routes");
 connectDB();
 
 // middlewares
@@ -18,6 +19,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/users", usersRoutes);
 app.use("/events", eventRoutes);
 app.use("/invites", inviteRoutes);
+app.use("/location", locationRoutes);
 
 //  routes
 app.get("/", (req, res) => {
