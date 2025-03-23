@@ -84,10 +84,15 @@ const respondAllToInvitation = async (req, res) => {
 
       // If coming by car, validate and save location
       if (transportationMode === 'car') {
-        if (!location) {
-          return res.status(400).json({ error: 'Location is required for carpooling.' });
+        if (!location || !location.coordinates || !Array.isArray(location.coordinates)) {
+          return res.status(400).json({ error: 'Invalid location format. Expected GeoJSON object.' });
         }
-        invite.location = location;
+
+        // Convert location to GeoJSON format
+        invite.location = {
+          type: 'Point',
+          coordinates: location.coordinates, // [longitude, latitude]
+        };
       }
 
       // Save the invite
