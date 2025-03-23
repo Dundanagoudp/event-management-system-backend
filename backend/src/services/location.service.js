@@ -16,7 +16,7 @@ const fetchNearbyAttendees = async (inviteId) => {
           type: 'Point',
           coordinates: driver.location.coordinates,
         },
-        $maxDistance: 10000, // 10 km
+        $maxDistance: 5000, // 10 km
       },
     },
   });
