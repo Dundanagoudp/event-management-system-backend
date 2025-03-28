@@ -1,163 +1,191 @@
 const Invite = require('../models/invite.model');
 const Event = require('../models/event.model');
 const { sendEmail } = require('../utils/emailSender');
-
-
 const { sendSMS } = require('../utils/smsSender');
+const { validationResult } = require('express-validator');
 
-// Send Invitation
+// Send invitation with enhanced error handling
 const sendInvitation = async (req, res) => {
   try {
-    const { eventId, attendeeEmail, attendeePhone } = req.body;
+    const { eventId, attendeeEmail } = req.body;
 
-    // Find the event
+    // Validate email format in controller
+    if (!attendeeEmail || !/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(attendeeEmail)) {
+      return res.status(400).json({ error: 'Valid email address is required' });
+    }
+
     const event = await Event.findById(eventId);
-    if (!event) return res.status(404).json({ message: 'Event not found' });
-
-    // Create the invite
-    const invite = new Invite({ event: eventId, attendeeEmail, attendeePhone });
-    await invite.save();
-
-    // Send email invitation
-    if (attendeeEmail) {
-      const emailSubject = `You're Invited to ${event.name}`;
-      const emailBody = `
-        <h1>You're Invited to ${event.name}!</h1>
-        <img src="${event.invitationCardImage}" alt="Event Banner" style="max-width: 100%;">
-        <p><strong>Description:</strong> ${event.description}</p>
-        <p><strong>Type:</strong> ${event.type}</p>
-        <p><strong>Category:</strong> ${event.category}</p>
-        <p><strong>Organizer:</strong> ${event.organizerName} (${event.organizerContact})</p>
-        <p><strong>Notes:</strong> ${event.notes}</p>
-        <p>Click the link below to respond to the invitation:</p>
-        <a href="http://yourapp.com/respond/${invite._id}">Respond to Invitation</a>
-      `;
-      await sendEmail(attendeeEmail, emailSubject, emailBody);
+    if (!event) {
+      return res.status(404).json({ message: 'Event not found' });
     }
 
-    // Send SMS invitation
-    if (attendeePhone) {
-      const smsBody = `You're invited to ${event.name}. Respond here: http://yourapp.com/respond/${invite._id}`;
-      await sendSMS(attendeePhone, smsBody);
+    // Check for existing invite
+    const existingInvite = await Invite.findOne({ event: eventId, attendeeEmail });
+    if (existingInvite) {
+      return res.status(409).json({ message: 'Invite already exists for this email' });
     }
 
-    res.status(201).json({ message: 'Invitation sent successfully', invite });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+    const invite = await Invite.create({ event: eventId, attendeeEmail });
+
+    // Prepare email content
+    const emailSubject = `Invitation: ${event.name}`;
+    const emailHtml = `
+      <h1>You're Invited!</h1>
+      <h2>${event.name}</h2>
+      <p><strong>When:</strong> ${event.startDateTime.toLocaleString()}</p>
+      <p><strong>Where:</strong> ${event.venueName}, ${event.address}</p>
+      <p>Please respond to this invitation by clicking below:</p>
+      <a href="${process.env.FRONTEND_URL}/invites/${invite._id}" 
+         style="padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">
+        Respond to Invitation
+      </a>
+    `;
+
+    // Send email with error handling
+    try {
+      await sendEmail(attendeeEmail, emailSubject, emailHtml);
+      return res.status(201).json({ 
+        message: 'Invitation sent successfully',
+        invite 
+      });
+    } catch (emailError) {
+      // Delete the invite if email fails
+      await Invite.findByIdAndDelete(invite._id);
+      return res.status(500).json({ 
+        message: 'Invitation created but email failed to send',
+        error: emailError.message,
+        invite // Return invite anyway since it was created
+      });
+    }
+
+  } catch (error) {
+    console.error('Invitation error:', error);
+    return res.status(500).json({ 
+      message: 'Error processing invitation',
+      error: error.message 
+    });
   }
 };
 
-// Respond to Invitation (Consolidated Logic for /invites/:inviteId)
+// Complete response handler
 const respondAllToInvitation = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
   try {
     const { inviteId } = req.params;
     const { status, transportationMode, location } = req.body;
 
-    // Validate status
-    if (!['accepted', 'declined'].includes(status)) {
-      return res.status(400).json({ error: 'Invalid status. Must be "accepted" or "declined".' });
-    }
-
-    // Find the invite
     const invite = await Invite.findById(inviteId);
     if (!invite) {
       return res.status(404).json({ message: 'Invitation not found' });
     }
 
-    // Update the invite
+    // Update invite
     invite.status = status;
+    invite.responseDate = new Date();
 
-    // If declined, save and respond
-    if (status === 'declined') {
-      await invite.save();
-      return res.json({ message: 'Thank you for your response. We hope to see you next time!' });
-    }
-
-    // If accepted, validate transportation mode
     if (status === 'accepted') {
-      if (!transportationMode) {
-        return res.status(400).json({ error: 'Transportation mode is required.' });
-      }
-
-      // Update transportation mode
       invite.transportationMode = transportationMode;
-
-      // If coming by car, validate and save location
-      if (transportationMode === 'car') {
-        if (!location || !location.coordinates || !Array.isArray(location.coordinates)) {
-          return res.status(400).json({ error: 'Invalid location format. Expected GeoJSON object.' });
-        }
-
-        // Convert location to GeoJSON format
+      
+      if (transportationMode === 'car' && location) {
         invite.location = {
           type: 'Point',
-          coordinates: location.coordinates, // [longitude, latitude]
+          coordinates: location.coordinates
         };
+        invite.isSharingLocation = true;
       }
-
-      // Save the invite
-      await invite.save();
-
-      // Respond with confirmation
-      return res.json({
-        message: 'Thank you for confirming your attendance!',
-        invite,
-        nextStep: transportationMode === 'car' ? 'Location saved for carpooling.' : 'Transportation mode saved.',
-      });
     }
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+
+    await invite.save();
+
+    res.json({
+      message: `Invitation ${status}`,
+      invite,
+      nextSteps: status === 'accepted' ? 
+        (transportationMode === 'car' ? 
+          'Location saved for carpooling' : 
+          'Transportation details saved') : 
+        'No further action needed'
+    });
+
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Error processing response',
+      error: error.message 
+    });
   }
 };
 
-// Respond to Invitation (Specific Logic for /invites/:inviteId/respond)
+// Simple response handler
 const respondToInvitation = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
   try {
     const { inviteId } = req.params;
     const { status } = req.body;
 
-    // Validate status
-    if (!['accepted', 'declined'].includes(status)) {
-      return res.status(400).json({ error: 'Invalid status. Must be "accepted" or "declined".' });
-    }
+    const invite = await Invite.findByIdAndUpdate(
+      inviteId,
+      { 
+        status,
+        responseDate: new Date() 
+      },
+      { new: true }
+    );
 
-    // Find the invite
-    const invite = await Invite.findById(inviteId);
     if (!invite) {
       return res.status(404).json({ message: 'Invitation not found' });
     }
 
-    // Update the invite
-    invite.status = status;
-    await invite.save();
+    res.json({
+      message: `Invitation ${status}`,
+      invite
+    });
 
-    // Respond based on status
-    if (status === 'declined') {
-      return res.json({ message: 'Thank you for your response. We hope to see you next time!' });
-    } else {
-      return res.json({ message: 'Thank you for confirming your attendance!' });
-    }
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Error processing response',
+      error: error.message 
+    });
   }
 };
 
-// Get Invitations for an Event
+// Get event invitations with filtering
 const getInvitationsForEvent = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const invites = await Invite.find({ event: eventId });
-    res.json({ invites });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+    const { status, transportationMode } = req.query;
+
+    const filter = { event: eventId };
+    if (status) filter.status = status;
+    if (transportationMode) filter.transportationMode = transportationMode;
+
+    const invites = await Invite.find(filter)
+      .populate('event', 'name startDateTime venueName')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      count: invites.length,
+      invites
+    });
+
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Error fetching invitations',
+      error: error.message 
+    });
   }
 };
-
-
 
 module.exports = {
   sendInvitation,
   respondAllToInvitation,
   respondToInvitation,
-  getInvitationsForEvent,
+  getInvitationsForEvent
 };

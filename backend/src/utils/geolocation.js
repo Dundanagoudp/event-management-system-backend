@@ -2,7 +2,7 @@ const axios = require('axios');
 
 module.exports.getAddressCoordinate = async (address) => {
   const apiKey = process.env.GOOGLE_MAPS_API;
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`;
+  const url = `https://maps.gomaps.pro/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`;
 
   try {
     const response = await axios.get(url);
@@ -22,7 +22,7 @@ module.exports.getAddressCoordinate = async (address) => {
 
 module.exports.getDistanceTime = async (origin, destination) => {
   const apiKey = process.env.GOOGLE_MAPS_API;
-  const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&key=${apiKey}`;
+  const url = `https://maps.gomaps.pro/maps/api/distancematrix/json?origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&key=${apiKey}`;
 
   try {
     const response = await axios.get(url);
